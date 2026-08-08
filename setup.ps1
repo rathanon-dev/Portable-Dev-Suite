@@ -61,7 +61,7 @@ $cudaBinDir    = Join-Path $toolsDir "nvidia\cuda\bin"
 $cudnnBinDir   = Join-Path $toolsDir "nvidia\cudnn\bin"
 $cudaStateFile = Join-Path $toolsDir "nvidia\cuda_state.txt"
 
-$folders = @($toolsDir, $mainTempDir, $7zDir, $aria2Dir, $gitDir, $pythonDir, $cudaBinDir, $cudnnBinDir)
+$folders = @($toolsDir, $mainTempDir, $7zDir, $aria2Dir, $gitDir, $pythonDir)
 foreach ($folder in $folders) {
     if (-not (Test-Path $folder)) { 
         New-Item -ItemType Directory -Force -Path $folder | Out-Null 
@@ -690,6 +690,7 @@ function Invoke-SetupDownloadAndExtract {
     }
     
     Write-SetupStatus -Message "`n[EXTRACT] Unpacking $ModuleName DLLs to $DestinationDir..." -Type INFO
+    if (-not (Test-Path $DestinationDir)) { New-Item -ItemType Directory -Force -Path $DestinationDir | Out-Null }
     foreach ($task in $DownloadTasks) {
         if (Test-Path $task.TargetPath) {
             # Build 7z extract arguments

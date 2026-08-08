@@ -36,8 +36,15 @@ def get_system_status():
             status["cuda_available"] = True
             status["cuda_device_name"] = torch.cuda.get_device_name(0)
     except ImportError:
-        # Fallback check for CUDA DLLs in PATH
-        cuda_dll_found = any("nvidia" in p.lower() or "cuda" in p.lower() for p in os.environ.get("PATH", "").split(os.pathsep))
+        import glob
+        # Smart Physical Check for CUDA DLLs in PATH
+        cuda_dll_found = False
+        for p in os.environ.get("PATH", "").split(os.pathsep):
+            if p and os.path.isdir(p):
+                if glob.glob(os.path.join(p, "cudart64_*.dll")):
+                    cuda_dll_found = True
+                    break
+                    
         if cuda_dll_found:
             status["cuda_device_name"] = "CUDA Runtime DLLs detected in PATH (PyTorch not installed yet)"
 
