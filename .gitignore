@@ -1,0 +1,64 @@
+# ========================================================
+# 🚀 Portable Dev Suite Specific (สำคัญที่สุดสำหรับโปรเจกต์นี้)
+# ========================================================
+/tools/
+/temp/
+cuda_state.txt
+*.tmp
+
+# ========================================================
+# 🐍 Python Standard Ignores
+# ========================================================
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual Environments (เผื่อผู้ใช้สร้าง venv ซ้อนไว้)
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Installer / Unit Test / Logs
+*.log
+pip-log.txt
+pip-delete-this-directory.txt
+.cache
+.pytest_cache/
+
+# ========================================================
+# 💻 IDEs & Editors Configuration
+# ========================================================
+.vscode/
+.idea/
+*.swp
+*~
+tempCodeRunnerFile.py
+# Security & Local Files
+/config/
+auto-install.bat
