@@ -926,13 +926,48 @@ function Install-AllSuite {
 # --------------------------------------------------------
 # 7. Environment & Shell Loader
 # --------------------------------------------------------
+function Sync-PythonEnvironment {
+    [CmdletBinding(PositionalBinding=$false)]
+    param ()
+    
+    $pyExe = Join-Path $pythonDir "python.exe"
+    if (-not (Test-Path $pyExe)) { return }
+    
+    $pipExe = Join-Path $pipDir "pip.exe"
+    $needRepair = $false
+    
+    if (Test-Path $pipExe) {
+        # Check if pip.exe launcher points to a broken or old relocated path
+        $testOut = Invoke-SetupCommand -CommandPath $pipExe -ArgumentList @("--version") -RedirectError -AsString 2>&1
+        if ($LASTEXITCODE -ne 0 -or $testOut -match "Fatal error in launcher|cannot find the file") {
+            $needRepair = $true
+        }
+    } elseif (Test-Path $pythonDir) {
+        $needRepair = $true
+    }
+    
+    if ($needRepair) {
+        Write-SetupStatus -Message "Detected relocated Python environment. Auto-repairing launchers..." -Type INFO
+        $pipArgs = @("-m", "pip", "install", "--force-reinstall", "--no-deps", "pip", "--no-warn-script-location") + (Get-PipProxyArgs)
+        Invoke-SetupCommand -CommandPath $pyExe -ArgumentList $pipArgs -NoOutput
+        
+        if (-not (Test-Path (Join-Path $pipDir "pip.exe"))) {
+            Invoke-SetupCommand -CommandPath $pyExe -ArgumentList @("-m", "ensurepip", "--upgrade") -NoOutput
+        }
+        Write-SetupStatus -Message "Python launchers repaired and synchronized." -Type OK
+    }
+}
+
 function Update-SessionPath {
     [CmdletBinding(PositionalBinding=$false)]
     param ()
     
     $resolvedGitBin = Join-Path $gitDir "cmd"
     if (-not (Test-Path (Join-Path $resolvedGitBin "git.exe"))) { $resolvedGitBin = Join-Path $gitDir "bin" }
-    $env:PATH = "$cudaBinDir;$cudnnBinDir;$pythonDir;$pipDir;$resolvedGitBin;$7zDir;$env:PATH"
+    
+    $portablePaths = @($cudaBinDir, $cudnnBinDir, $pythonDir, $pipDir, $resolvedGitBin, $7zDir) | Where-Object { Test-Path $_ }
+    $currentPathList = ($env:PATH -split ';') | Where-Object { [string]::IsNullOrWhiteSpace($_) -eq $false -and $portablePaths -notcontains $_ }
+    $env:PATH = (($portablePaths + $currentPathList) -join ';')
 }
 
 function Enter-LiveDevShell {
@@ -940,7 +975,7 @@ function Enter-LiveDevShell {
     param ()
     
     # 1. Ensure core bootstrapping tools (7-Zip, Aria2, Git) are ready
-    $forceCore = if ($tool -in @('all', 'git') -and $Force) { $true } else { $false }
+    $forceCore = if ($Force) { $true } else { $false }
     Ensure-DefaultTools -ForceInstall:$forceCore
 
     # 2. Check Portable Python in tools/python
@@ -969,6 +1004,13 @@ function Enter-LiveDevShell {
 
     Clear-TempDirectory
     Update-SessionPath
+    Sync-PythonEnvironment
+    
+    # Inject global function wrappers for 100% path independence in PowerShell
+    Invoke-Expression "function global:python { & `"$pyExe`" `$args }"
+    Invoke-Expression "function global:py     { & `"$pyExe`" `$args }"
+    Invoke-Expression "function global:pip    { & `"$pyExe`" -m pip `$args }"
+    Invoke-Expression "function global:pip3   { & `"$pyExe`" -m pip `$args }"
     
     if (Test-Path $pyExe) {
         if (Test-ProxyHealth) {
@@ -1078,14 +1120,13 @@ function Show-HelpMenu {
 
 # --------------------------------------------------------
 # 8. Router
-
 # --------------------------------------------------------
 
-if ($EnvMode) { Enter-LiveDevShell; exit }
+if ($EnvMode) { Enter-LiveDevShell; return }
 
 if ($Help -or $PSBoundParameters.Count -eq 0) {
     Show-HelpMenu
-    exit
+    return
 }
 
 if ($Check) {
@@ -1100,17 +1141,17 @@ if ($Check) {
     Write-Host "  [OK] NVIDIA Driver      : v$($sysInfo.Driver)" -ForegroundColor Green
     Write-Host "  [OK] Max CUDA Supported : v$($sysInfo.MaxCuda)" -ForegroundColor Cyan
     Write-Host "======================================================================`n" -ForegroundColor Cyan
-    exit
+    return
 }
 
 if ($List) {
     if (-not $RemainingArgs -or $RemainingArgs.Count -eq 0) {
         Write-SetupStatus -Message "Missing module for -l (List). Please specify 'python', 'cuda', or 'cudnn'." -Type ERROR
         Show-HelpMenu
-        exit
+        return
     }
     $ToolToList = $RemainingArgs[0]
-    $forceCore = if ($tool -in @('all', 'git') -and $Force) { $true } else { $false }
+    $forceCore = if ($Force) { $true } else { $false }
     Ensure-DefaultTools -ForceInstall:$forceCore
 
     $tList = $ToolToList.ToLower()
@@ -1118,7 +1159,7 @@ if ($List) {
     if ($tList -notin $validListTools) {
         Write-SetupStatus -Message "Invalid module '$ToolToList' for -l (List)." -Type ERROR
         Show-HelpMenu
-        exit
+        return
     }
     if ($tList -eq 'python') {
         Write-Host "`n[PROCESS] Fetching Python versions from NuGet..." -ForegroundColor Yellow
@@ -1154,14 +1195,14 @@ if ($List) {
         else { Write-Error "[ERROR] Failed to fetch data." }
     }
     Clear-TempDirectory
-    exit
+    return
 }
 
 if ($Install) {
     if (-not $RemainingArgs -or $RemainingArgs.Count -eq 0) {
         Write-SetupStatus -Message "Missing module for -i (Install). Please specify 'python', 'cuda', 'cudnn', 'git', '7zip', or 'all'." -Type ERROR
         Show-HelpMenu
-        exit
+        return
     }
     $ToolToInstall = $RemainingArgs[0]
     $tool = $ToolToInstall.ToLower()
@@ -1169,10 +1210,10 @@ if ($Install) {
     if ($tool -notin $validTools) {
         Write-SetupStatus -Message "Invalid module '$ToolToInstall' for -i (Install)." -Type ERROR
         Show-HelpMenu
-        exit
+        return
     }
 
-    $forceCore = if ($tool -in @('all', 'git') -and $Force) { $true } else { $false }
+    $forceCore = if ($Force) { $true } else { $false }
     Ensure-DefaultTools -ForceInstall:$forceCore
 
     # --------------------------------------------------------
@@ -1189,13 +1230,13 @@ if ($Install) {
             Write-Host " cuDNN Target    : Auto-match CUDA State" -ForegroundColor Yellow
             Write-Host "======================================================================" -ForegroundColor Cyan
             $confirm = Read-Host "Proceed with deployment? (y/N)"
-            if ($confirm -notmatch "^[Yy]$") { Write-Host "Installation cancelled."; exit }
+            if ($confirm -notmatch "^[Yy]$") { Write-Host "Installation cancelled."; return }
         }
 
         Install-AllSuite -IsAutoMode $AutoYes
         Clear-TempDirectory
         Enter-LiveDevShell
-        exit
+        return
     }
 
     # --------------------------------------------------------
@@ -1231,7 +1272,7 @@ if ($Install) {
         if ($targetPyVersion) { Write-Host " Python Version  : v$targetPyVersion" -ForegroundColor Yellow }
         Write-Host "======================================================================" -ForegroundColor Cyan
         $confirm = Read-Host "Proceed with deployment? (y/N)"
-        if ($confirm -notmatch "^[Yy]$") { Write-Host "Installation cancelled."; exit }
+        if ($confirm -notmatch "^[Yy]$") { Write-Host "Installation cancelled."; return }
     }
 
     if ($tool -eq 'python') { Install-Python -Version $targetPyVersion }
@@ -1240,5 +1281,6 @@ if ($Install) {
 
     Clear-TempDirectory
     Enter-LiveDevShell
-    exit
+    return
 }
+
